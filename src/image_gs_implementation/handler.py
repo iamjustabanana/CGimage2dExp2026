@@ -54,6 +54,11 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     grad_pos_vis = gaussians.visualize_positions(g, grad_vis, dim=1.0)
     results.append(input_image.to_numpy(grad_pos_vis))
     input_image.save_image(grad_pos_vis, f"{cfg.out_dir}/gaussians_on_gradient.png")
+    # 紅點疊在全黑背景上
+    black = torch.zeros_like(target)
+    black_pos_vis = gaussians.visualize_positions(g, black, dim=1.0)
+    results.append(input_image.to_numpy(black_pos_vis))
+    input_image.save_image(black_pos_vis, f"{cfg.out_dir}/gaussians_black.png")
 
     # ---- Step 3~6：待實作（完成後逐段打開）----
     # Step 6(資訊)：先報壓縮率(用最終 num_gaussians)
