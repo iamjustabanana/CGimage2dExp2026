@@ -11,7 +11,7 @@ if __name__ == "__main__" and __package__ is None:
 
 import streamlit as st
 
-from ..input_image.process import process_batch
+from .. import image_gs_implementation
 from .image_loader import load, ALLOWED_EXTENSIONS
 
 st.set_page_config(page_title="Image Batch Processor", layout="wide")
@@ -33,7 +33,7 @@ uploaded_files = st.file_uploader(
 
 col_up, _ = st.columns([1, 5])
 with col_up:
-    if st.button("Upload", disabled=not uploaded_files, use_container_width=True):
+    if st.button("Upload", disabled=not uploaded_files, width='stretch'):
         for f in uploaded_files:
             st.session_state.batch.append(load(f.read()))
         st.success(f"Loaded {len(uploaded_files)} image(s)")
@@ -47,7 +47,7 @@ for i, arr in enumerate(st.session_state.batch):
 
 if st.button("Process Batch", disabled=len(st.session_state.batch) == 0):
     with st.spinner("Processing..."):
-        st.session_state.results = process_batch(st.session_state.batch)
+        st.session_state.results = image_gs_implementation.process_batch(st.session_state.batch)
     st.session_state.slide_index = 0
     st.rerun()
 
@@ -63,19 +63,19 @@ if st.session_state.results:
     with col_prev:
         st.button("◀ Prev", on_click=lambda: st.session_state.update(
             slide_index=(st.session_state.slide_index - 1) % total
-        ), use_container_width=True)
+        ), width='stretch')
 
     with col_img:
         st.image(
             st.session_state.results[idx],
             caption=f"Output {idx + 1} / {total}",
-            use_container_width=True,
+            width='stretch',
         )
 
     with col_next:
         st.button("Next ▶", on_click=lambda: st.session_state.update(
             slide_index=(st.session_state.slide_index + 1) % total
-        ), use_container_width=True)
+        ), width='stretch')
 
     if st.button("Clear & Start Over"):
         st.session_state.batch = []
