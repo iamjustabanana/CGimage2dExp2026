@@ -1,0 +1,38 @@
+# Image-GS 重實作設定檔
+# 改參數只要改這裡；程式用 config.load_config() 讀進來。
+# 每個欄位標了它在哪個 Step 開始被用到。
+
+# ---- 輸入影像（Step 1）----
+downsample: 4            # 2k 圖縮成 1/4 邊長(~512)，純 PyTorch 才跑得動
+
+# ---- 高斯（Step 2）----
+num_gaussians: 5000
+init_mode: gradient      # gradient(梯度引導) | random(對照組)
+init_random_ratio: 0.3   # gradient 模式下仍有這比例隨機散佈(避免平坦區沒高斯)
+init_scale: 5.0          # 初始高斯半徑(像素)
+
+# ---- 渲染（Step 3）----
+topk: 0                  # 0 = 全量(每像素用所有高斯)；>0 = 只取最近 K 個(進階)
+eps: 1.0e-8             # 加權平均分母保護項，避免除以 0
+
+# ---- 訓練（Step 4）----
+max_steps: 2000
+pos_lr: 0.3             # 注意：像素座標，位置 lr 比官方[0,1]空間大很多
+scale_lr: 2.0e-3
+rot_lr: 2.0e-3
+feat_lr: 5.0e-3
+ssim_loss_ratio: 0.1   # 總 loss = L1 + ratio*(1-SSIM)；0 則只用 L1
+eval_steps: 100        # 每幾步印一次 PSNR
+save_image_steps: 500  # 每幾步存一張重建圖
+
+# ---- 量化／壓縮（Step 5）----
+quantize: false
+pos_bits: 16
+scale_bits: 16
+rot_bits: 16
+feat_bits: 16
+
+# ---- 裝置／輸出 ----
+device: auto           # auto -> 依序 cuda > mps > cpu；也可寫死 "cuda"/"cpu"
+out_dir: src/image_gs_implementation/outputs
+seed: 123
