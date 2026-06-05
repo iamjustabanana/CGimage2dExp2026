@@ -30,6 +30,7 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     cfg = cfg or load_config()
     torch.manual_seed(cfg.seed)
     device = resolve_device(cfg.device)
+    print(f"Using device: {device}")
 
     # Step 1
     target, grid, grad_prob = input_image.process(image, cfg, device)
