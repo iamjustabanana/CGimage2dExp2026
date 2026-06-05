@@ -16,10 +16,11 @@ src/image_gs_implementation/
 ├── config.py          # 【集中設定】所有超參數
 ├── handler.py         # pipeline 總指揮：process(np.uint8) -> list[np.uint8]
 ├── input_image/       # Step 1 ✅ 載圖/網格/梯度圖/PSNR/I-O
-├── gaussians/         # Step 2 ⬜ 高斯參數模型 + 初始化
-├── render/            # Step 3 ⬜ 可微分渲染器
-├── train/             # Step 4 ⬜ 訓練迴圈
-├── compress/          # Step 5 ⬜ 壓縮率 + 量化
+├── gaussians/         # Step 2 ✅ 高斯參數模型 + 初始化
+├── render/            # Step 3 ⬜ 可微分渲染器(全量 + top-K)
+├── train/             # Step 4 ⬜ 訓練迴圈(+ lr 衰減/早停)
+├── progressive/       # Step 5 ⬜ 誤差引導漸進加高斯
+├── compress/          # Step 6 ⬜ 壓縮率 + 量化
 └── outputs/           # 輸出圖(不進 git)
 ```
 
@@ -41,7 +42,7 @@ conic    Σ⁻¹
  C(p) = ──────────────────
          Σ_k w_k(p) + ε
 ```
-最簡版對「所有高斯」求和；論文用 **top-K**(每像素只取最近 K 個)加速，屬進階。
+先做全量(對所有高斯求和)，再做論文的 **top-K**(每像素只取權重最大的 K 個)：除了加速，也讓遠處高斯不互相污染、邊界更銳利。**top-K 與 progressive 都是論文核心**，本計畫完整實作。
 
 **為什麼能壓縮**：原圖存 `H×W×C` 個值；Image-GS 只存 `N` 個高斯 ×（2+2+1+C）。
 `N` 遠小於像素數就壓縮了，再加**量化**(float32 → 8/12 bit)壓更多。公式見 `image-gs/model.py:184`。
@@ -56,26 +57,35 @@ conic    Σ⁻¹
   - 驗證：`uv run python -m src.image_gs_implementation.input_image.process`
   - 看 `outputs/_check_gradient.png`，邊緣處應較亮。
 
-- [ ] **Step 2 — `gaussians/`**：`Gaussians2D`(nn.Module，4 個 Parameter) + 梯度引導/取色初始化
+- [x] **Step 2 — `gaussians/`**：`Gaussians2D`(nn.Module，4 個 Parameter) + 梯度引導/取色初始化
   - 官方對照：`_init_gaussians` / `_init_pos_scale_feat` / `_sample_pos` / `_get_target_features`
-  - 驗證：印參數 shape；把初始位置畫在圖上看是否集中在邊緣。
+  - 驗證：`uv run python -m src.image_gs_implementation.gaussians.process`
+    看 `outputs/_check_gaussians_gradient.png`，紅點(高斯中心)應集中在邊緣。
 
-- [ ] **Step 3 — `render/`**：`build_conic` + `render`(全量加權平均、像素分塊)
-  - 官方對照：`forward` / gsplat `rasterize_*`
-  - 驗證：固定幾個高斯，渲染出彩色橢圓斑點。
+- [ ] **Step 3 — `render/`**：`build_conic` + `render`，分兩階段
+  - 3.1 全量加權平均(像素分塊避免爆顯存)
+  - 3.2 **top-K 正規化**(論文核心)：每像素只取權重最大的 K 個高斯
+  - 官方對照：`forward` / gsplat `rasterize_gaussians_sum`(含 top-K)
+  - 驗證：固定幾個高斯，渲染出彩色橢圓斑點；topk 開關結果合理。
 
-- [ ] **Step 4 — `train/`**：`make_optimizer` + `train`(L1[+SSIM]、Adam 分組 lr)
-  - 官方對照：`optimize` / `_get_total_loss` / `_init_optimization`
+- [ ] **Step 4 — `train/`**：`make_optimizer` + `train`(L1[+SSIM]、Adam 分組 lr、lr 衰減/早停)
+  - 官方對照：`optimize` / `_get_total_loss` / `_init_optimization` / `_lr_schedule`
   - 驗證：loss 降、PSNR 升、輸出越來越像原圖。
 
-- [ ] **Step 5 — `compress/`**：`compression_stats` + `ste_quantize`(STE 量化)
+- [ ] **Step 5 — `progressive/`**：`num_to_add` + `process`(誤差引導漸進加高斯)
+  - 起始只放 `initial_ratio`；訓練中分 `add_times` 次在高誤差區補高斯；train 迴圈呼叫。
+  - 官方對照：`_add_gaussians`(及 `optimize` 內呼叫時機)
+  - 驗證：開 progressive vs 關，同樣總數下 PSNR 較高；新高斯落在高誤差區。
+
+- [ ] **Step 6 — `compress/`**：`compression_stats` + `ste_quantize`(STE 量化)
   - 官方對照：`_log_compression_rate` / `_quantize` / `utils/quantization_utils.py`
   - 驗證：報「壓縮 N 倍」；量化後 PSNR 掉一點但更小。
 
 每完成一步：填滿該子套件 → 打開 `handler.py` 對應段落 → 來這份打勾。
 
-### 進階（核心完成後再做，壓縮本身不需要）
-top-K 正規化、progressive 漸進加高斯(`_add_gaussians`)、tile 加速、saliency 初始化。
+### 仍屬選配（純 PyTorch / 無外部模型，故暫不做）
+- tile-based CUDA 加速(我們用純 PyTorch 的全量/top-K 取代)
+- saliency 初始化(需 EML-Net 預訓練模型，額外下載)
 
 ---
 

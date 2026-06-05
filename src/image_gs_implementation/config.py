@@ -31,10 +31,10 @@ class Config:
     init_random_ratio: float = 0.3
     init_scale: float = 5.0
     # ---- 渲染（Step 3）----
-    topk: int = 0
+    topk: int = 10               # 每像素只取最近 K 個高斯(論文做法)；0 = 全量(較慢)
     eps: float = 1e-8
     # ---- 訓練（Step 4）----
-    max_steps: int = 2000
+    max_steps: int = 5000
     pos_lr: float = 0.3
     scale_lr: float = 2e-3
     rot_lr: float = 2e-3
@@ -42,7 +42,19 @@ class Config:
     ssim_loss_ratio: float = 0.1
     eval_steps: int = 100
     save_image_steps: int = 500
-    # ---- 量化／壓縮（Step 5）----
+    # lr 衰減 / 早停（Step 4）
+    lr_schedule: bool = True
+    decay_ratio: float = 10.0
+    check_decay_steps: int = 1000
+    max_decay_times: int = 1
+    decay_threshold: float = 1e-3
+    # ---- 漸進最佳化（Step 5）----
+    progressive: bool = True
+    initial_ratio: float = 0.5   # 一開始只放總數的這個比例
+    add_times: int = 4           # 分幾次把高斯加到 num_gaussians
+    add_steps: int = 500         # 每隔幾步加一次
+    post_min_steps: int = 3000   # 加滿後至少再訓練幾步
+    # ---- 量化／壓縮（Step 6）----
     quantize: bool = False
     pos_bits: int = 16
     scale_bits: int = 16

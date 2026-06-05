@@ -22,8 +22,8 @@ import numpy as np
 import torch
 
 from .config import Config, load_config, resolve_device
-from . import input_image
-# from . import gaussians, render, train, compress
+from . import input_image, gaussians
+# from . import render, train, compress
 
 
 def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
@@ -43,11 +43,26 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     input_image.save_image(target, f"{cfg.out_dir}/input.png")
     input_image.save_image(grad_vis, f"{cfg.out_dir}/gradient.png")
 
-    # ---- Step 2~5：待實作（完成後逐段打開）----
-    # g = gaussians.process(target, grad_prob, grid, cfg, device)
+    # ---- Step 2：建立並初始化高斯 ----
+    g = gaussians.process(target, grad_prob, grid, cfg, device)
+    # 紅點疊在原圖上
+    pos_vis = gaussians.visualize_positions(g, target)
+    results.append(input_image.to_numpy(pos_vis))
+    input_image.save_image(pos_vis, f"{cfg.out_dir}/gaussians_init.png")
+    # 紅點疊在梯度圖上(不壓暗，方便檢查點是否落在亮邊)
+    grad_pos_vis = gaussians.visualize_positions(g, grad_vis, dim=1.0)
+    results.append(input_image.to_numpy(grad_pos_vis))
+    input_image.save_image(grad_pos_vis, f"{cfg.out_dir}/gaussians_on_gradient.png")
+
+    # ---- Step 3~6：待實作（完成後逐段打開）----
+    # Step 6(資訊)：先報壓縮率(用最終 num_gaussians)
     # compress.process(g, h * w, cfg)
+    # Step 4(+5)：訓練；progressive 開啟時 train 內部會呼叫 Step 5 漸進補高斯。
+    #            train 內部用 Step 3 的 render.process 渲染。
     # g = train.process(g, target, grid, cfg)
+    # Step 3：最終渲染重建圖
     # pred = render.process(g, h, w, grid, cfg)
     # results.append(input_image.to_numpy(pred))
+    # input_image.save_image(pred, f"{cfg.out_dir}/render.png")
 
     return results

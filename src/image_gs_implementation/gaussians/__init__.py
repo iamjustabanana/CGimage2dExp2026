@@ -1,3 +1,3 @@
-from .process import process, Gaussians2D
+from .process import process, Gaussians2D, visualize_positions
 
-__all__ = ["process", "Gaussians2D"]
+__all__ = ["process", "Gaussians2D", "visualize_positions"]
