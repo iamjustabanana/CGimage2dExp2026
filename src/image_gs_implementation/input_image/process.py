@@ -78,8 +78,11 @@ def gradient_map(image: torch.Tensor) -> torch.Tensor:
     ky = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
                       dtype=torch.float32, device=image.device).view(1, 1, 3, 3)
     gray = image.mean(dim=0, keepdim=True).unsqueeze(0)        # [1,1,H,W]
-    gx = F.conv2d(gray, kx, padding=1)
-    gy = F.conv2d(gray, ky, padding=1)
+    # 用反射邊界補一圈再卷積(對齊scipy.ndimage.sobel 預設 mode='reflect')。
+    # 若用 F.conv2d(padding=1) 會補 0，邊框會跟外面的 0 產生假跳變 -> 整圈假高梯度。
+    gray = F.pad(gray, (1, 1, 1, 1), mode="reflect")
+    gx = F.conv2d(gray, kx)                                    # padding=0(已手動 pad)
+    gy = F.conv2d(gray, ky)
     grad = torch.sqrt(gx**2 + gy**2).reshape(-1)              # [H*W]
     grad = grad**2                                             # 平方放大強邊緣(論文做法)
     return grad / (grad.sum() + 1e-12)                        # 正規化成機率
