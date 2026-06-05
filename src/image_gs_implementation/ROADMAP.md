@@ -18,7 +18,7 @@ src/image_gs_implementation/
 ├── input_image/       # Step 1 ✅ 載圖/網格/梯度圖/PSNR/I-O
 ├── gaussians/         # Step 2 ✅ 高斯參數模型 + 初始化
 ├── render/            # Step 3 ✅ 可微分渲染器(全量 + top-K)
-├── train/             # Step 4 ⬜ 訓練迴圈(+ lr 衰減/早停)
+├── train/             # Step 4 ✅ 訓練迴圈(+ lr 衰減/早停)
 ├── progressive/       # Step 5 ✅ 誤差引導漸進加高斯
 ├── compress/          # Step 6 ⬜ 壓縮率 + 量化
 └── outputs/           # 輸出圖(不進 git)
@@ -74,9 +74,14 @@ conic    Σ⁻¹
   - 注意：純 PyTorch 全量 all-pairs + autograd 記憶體吃重，訓練(Step 4)時要靠
     downsample / 控制高斯數;預覽渲染記得包 `torch.no_grad()`。
 
-- [ ] **Step 4 — `train/`**：`make_optimizer` + `train`(L1[+SSIM]、Adam 分組 lr、lr 衰減/早停)
+- [x] **Step 4 — `train/`**：`make_optimizer` + `train` + 純 PyTorch `ssim`
+  - loss = L1 + ratio·(1-SSIM)；Adam 分組 lr；clip θ∈[0,π]、scale>0；lr 衰減/早停。
+  - 內含 Step 5 整合：每 add_steps 步呼叫 `progressive.process` 補高斯並重建 optimizer。
   - 官方對照：`optimize` / `_get_total_loss` / `_init_optimization` / `_lr_schedule`
-  - 驗證：loss 降、PSNR 升、輸出越來越像原圖。
+  - 驗證：`uv run python -m src.image_gs_implementation.train.process`
+    256px/2000 高斯/800 步 → PSNR 23→28.6 dB，重建幾乎無法分辨；每次 progressive 補點 PSNR 跳升。
+  - ⚠ 純 PyTorch 全量很慢(256px 800 步 ≈ 9 min)+ 吃記憶體；高解析需調大 `downsample`。
+    要加速/上高解析 → 需 tile-based 或 gradient checkpointing(見下方選配)。
 
 - [x] **Step 5 — `progressive/`**：`num_to_add` + `process`(誤差引導漸進加高斯)
   - 渲染目前圖 → 誤差圖(機率) → multinomial 取樣新位置 → 新高斯顏色=殘差 → 接上舊的回傳。
@@ -91,8 +96,13 @@ conic    Σ⁻¹
 
 每完成一步：填滿該子套件 → 打開 `handler.py` 對應段落 → 來這份打勾。
 
-### 仍屬選配（純 PyTorch / 無外部模型，故暫不做）
-- tile-based CUDA 加速(我們用純 PyTorch 的全量/top-K 取代)
+### 已加的優化
+- [x] **tile 渲染**(`render/_render_tiled`)：切 T×T 方塊，每塊只用 footprint 有交集的高斯。
+  純 PyTorch 最佳 `tile_size≈64`；512px 渲染快 ~20x、256px 訓練快 ~8x，PSNR 不變。
+  `cfg.tile_size=0` 可切回全量 all-pairs 對照。
+
+### 仍屬選配（暫不做）
+- gradient checkpointing(進一步省訓練記憶體，讓高解析訓練不 OOM)
 - saliency 初始化(需 EML-Net 預訓練模型，額外下載)
 
 ---

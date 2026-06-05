@@ -21,6 +21,8 @@ Step 2: 高斯參數模型  ✅ 已完成
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -29,8 +31,12 @@ def process(target, grad_prob, grid, cfg, device) -> "Gaussians2D":
     """Step 2 主函式：建立並初始化一組高斯。
 
     target[C,H,W] / grad_prob[H*W] / grid[H*W,2] / cfg / device -> Gaussians2D
+
+    progressive 開啟時，這裡只建「起始量」= ceil(initial_ratio × num_gaussians)，
+    其餘由 Step 5 在訓練中漸進補滿(對齊官方 _init_gaussians)。
     """
-    g = Gaussians2D(cfg.num_gaussians, feat_dim=target.shape[0], device=device)
+    n = math.ceil(cfg.initial_ratio * cfg.num_gaussians) if cfg.progressive else cfg.num_gaussians
+    g = Gaussians2D(n, feat_dim=target.shape[0], device=device)
     g.init_from_image(target, grad_prob, grid, cfg)
     return g
 

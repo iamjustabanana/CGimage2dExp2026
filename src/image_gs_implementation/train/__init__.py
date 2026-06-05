@@ -1,3 +1,3 @@
-from .process import process, make_optimizer
+from .process import process, train, make_optimizer, ssim
 
-__all__ = ["process", "make_optimizer"]
+__all__ = ["process", "train", "make_optimizer", "ssim"]

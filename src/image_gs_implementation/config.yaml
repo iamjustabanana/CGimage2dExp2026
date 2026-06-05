@@ -14,6 +14,7 @@ inverse_scale: true      # 論文預設：參數存 1/s，收斂更快更好(Eq.
 
 # ---- 渲染（Step 3）----
 topk: 10                 # 每像素只取最近 K 個高斯(論文做法)；0 = 全量(較慢)
+tile_size: 64            # >0：tile 渲染(切方塊+剔除遠處高斯，快)；0：全量 all-pairs(慢)。純PyTorch最佳~64
 
 # ---- 訓練（Step 4）----
 max_steps: 5000

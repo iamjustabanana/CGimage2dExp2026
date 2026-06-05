@@ -50,56 +50,96 @@ def build_conic(scale: torch.Tensor, rot: torch.Tensor, inverse_scale: bool) -> 
     return R @ D @ R.transpose(-1, -2)                     # Σ⁻¹ = R·diag(1/s²)·Rᵀ
 
 
+def _aggregate(pts: torch.Tensor, xy: torch.Tensor, conic: torch.Tensor,
+               feat: torch.Tensor, topk: int) -> torch.Tensor:
+    """核心：對一批像素 pts[B,2]，用給定的一組高斯算出顏色 [B,C]。
+
+    這就是論文 Eq.1(權重) + Eq.5(top-K 正規化加權平均)，含數值穩定。
+    全量版與 tile 版都呼叫它，差別只在「傳進來的高斯是全部、還是只有附近的」。
+    """
+    n = xy.shape[0]
+    # ── 算二次型 q = (x-μ)ᵀ Σ⁻¹ (x-μ)，Eq.1 裡 exp 內的部分 ──
+    d = pts[:, None, :] - xy[None, :, :]                   # [B,n,2] = (x-μ)
+    tmp = torch.einsum("bni,nij->bnj", d, conic)           # (x-μ)·Σ⁻¹  [B,n,2]
+    quad = (tmp * d).sum(-1)                                # [B,n]  q=(x-μ)ᵀΣ⁻¹(x-μ)
+
+    # ── top-K：權重最大 = 二次型 q 最小的 K 個(論文 Eq.5)──
+    use_topk = 0 < topk < n
+    if use_topk:
+        quad, idx = quad.topk(topk, dim=1, largest=False)  # [B,K] 最小的 K 個 q / 索引
+        feat_sel = feat[idx]                               # [B,K,C] 對應顏色
+    else:
+        feat_sel = None
+
+    # ── 數值穩定：每像素減最小 q(=最大權重)再 exp，最大權重=1、分母≥1(不黑、不用 eps)──
+    q_min = quad.min(dim=1, keepdim=True).values           # [B,1]
+    weight = torch.exp(-0.5 * (quad - q_min))              # [B,K或n]
+
+    # ── 聚合 cr(x) = Σ w·c / Σ w(常數因子已約掉)──
+    if use_topk:
+        numer = (weight.unsqueeze(-1) * feat_sel).sum(1)   # [B,C]
+    else:
+        numer = weight @ feat                              # [B,C]
+    denom = weight.sum(1, keepdim=True)                    # [B,1]
+    return numer / denom
+
+
+def _render_full(xy, conic, feat, h, w, grid, cfg) -> torch.Tensor:
+    """全量 all-pairs：每像素對「所有」高斯算。把像素分塊避免峰值記憶體爆掉。"""
+    N, C = feat.shape
+    P = grid.shape[0]
+    out = torch.empty(P, C, device=feat.device, dtype=feat.dtype)
+    chunk = max(256, int(4_000_000 / N))                   # 控制 [chunk,N] 大小
+    for start in range(0, P, chunk):
+        out[start:start + chunk] = _aggregate(grid[start:start + chunk], xy, conic, feat, cfg.topk)
+    return out.reshape(h, w, C).permute(2, 0, 1).contiguous()
+
+
+def _render_tiled(xy, scale, conic, feat, h, w, cfg) -> torch.Tensor:
+    """tile 渲染：把圖切成 T×T 方塊，每塊只用「footprint 有碰到它」的高斯。
+
+    剔除遠處高斯後，每像素只跟少數高斯算 -> 計算量與記憶體都大降(論文 tile 做法)。
+    沒有任何高斯碰到的 tile 會留黑(罕見；訓練時靠 progressive 補)。
+    """
+    C = feat.shape[1]
+    device = feat.device
+    T = cfg.tile_size
+    # 每個高斯的 3σ 包圍半徑(取較長軸)：決定它的 footprint 會碰到哪些 tile
+    std = (1.0 / scale) if cfg.inverse_scale else scale    # [N,2] 實際 std
+    radius = 3.0 * std.max(dim=1).values                   # [N]
+    cx, cy = xy[:, 0], xy[:, 1]
+
+    out = torch.zeros(h, w, C, device=device, dtype=feat.dtype)
+    nty, ntx = (h + T - 1) // T, (w + T - 1) // T
+    for ty in range(nty):
+        y0, y1 = ty * T, min((ty + 1) * T, h)
+        for tx in range(ntx):
+            x0, x1 = tx * T, min((tx + 1) * T, w)
+            # 剔除：留下 footprint 方框 [cx±r,cy±r] 與此 tile [x0,x1)×[y0,y1) 有交集的高斯
+            m = (cx + radius >= x0) & (cx - radius < x1) & (cy + radius >= y0) & (cy - radius < y1)
+            idx = m.nonzero(as_tuple=True)[0]
+            if idx.numel() == 0:
+                continue                                   # 無高斯 -> 留黑
+            # 此 tile 的像素座標(中心)
+            ys = torch.arange(y0, y1, device=device, dtype=torch.float32) + 0.5
+            xs = torch.arange(x0, x1, device=device, dtype=torch.float32) + 0.5
+            gy, gx = torch.meshgrid(ys, xs, indexing="ij")
+            pts = torch.stack([gx, gy], dim=-1).reshape(-1, 2)   # [th*tw,2]
+            color = _aggregate(pts, xy[idx], conic[idx], feat[idx], cfg.topk)
+            out[y0:y1, x0:x1] = color.reshape(y1 - y0, x1 - x0, C)
+    return out.permute(2, 0, 1).contiguous()
+
+
 def process(gaussians, h: int, w: int, grid, cfg) -> torch.Tensor:
     """Step 3 主函式：把高斯渲染成圖 [C,H,W]。
 
-    gaussians: Gaussians2D(呼叫 gaussians() 取 xy/scale/rot/feat)；grid[H*W,2]。
-    cfg.topk>0 走 top-K；<=0 或 >=N 走全量。
+    cfg.tile_size>0 走 tile(快)，否則走全量 all-pairs。cfg.topk>0 取 top-K。
     """
     xy, scale, rot, feat = gaussians()                     # xy[N,2] scale[N,2] rot[N,1] feat[N,C]
-    N, C = feat.shape
     conic = build_conic(scale, rot, cfg.inverse_scale)     # [N,2,2]
-
-    P = grid.shape[0]                                      # 像素總數 = H*W
-    out = torch.empty(P, C, device=feat.device, dtype=feat.dtype)
-
-    use_topk = 0 < cfg.topk < N                            # K>=N 視為全量
-    k = cfg.topk if use_topk else N
-
-    # 把像素分塊：控制 [chunk, N] 權重矩陣大小，避免顯存爆掉(訓練時 autograd 還會留中間值)
-    chunk = max(256, int(4_000_000 / N))
-
-    for start in range(0, P, chunk):
-        pts = grid[start:start + chunk]                    # x：這批像素座標 [B,2]
-        # ── 算二次型 q = (x-μ)ᵀ Σ⁻¹ (x-μ)，論文 Eq.1 裡 exp 內的部分 ──
-        d = pts[:, None, :] - xy[None, :, :]               # [B,N,2] 像素到高斯中心的位移 = (x-μ)
-        # tmp = d·conic，再跟 d 逐元素相乘求和 -> 二次型
-        tmp = torch.einsum("bni,nij->bnj", d, conic)       # [B,N,2]
-        quad = (tmp * d).sum(-1)                            # [B,N]  q_i = (x-μ)ᵀΣ⁻¹(x-μ)
-
-        # ── 選參與聚合的高斯：top-K = 權重最大 = 二次型 q 最小的 K 個 ──
-        if use_topk:                                       # 論文 Eq.5：每像素只留 top-K
-            quad, idx = quad.topk(k, dim=1, largest=False)  # [B,K] 最小的 K 個 q / 索引
-            feat_sel = feat[idx]                           # [B,K,C] 對應顏色 cᵢ
-        else:                                              # 全量(用所有高斯)
-            feat_sel = None
-
-        # ── 數值穩定：每像素減去最小 q(=最大權重)再取 exp ──
-        # cr(x)=ΣGᵢcᵢ/ΣGᵢ；把 Gᵢ 同除最大權重 exp(-½q_min) 在分子分母會約掉，數學等價，
-        # 但這樣最大權重恆=1、分母≥1 -> 不會 underflow 變黑、也不用 eps。
-        q_min = quad.min(dim=1, keepdim=True).values       # [B,1] 最近高斯的 q
-        weight = torch.exp(-0.5 * (quad - q_min))          # [B,K或N] 穩定化權重(最大=1)
-
-        # ── 聚合 cr(x) = Σ w·c / Σ w：論文 Eq.5(常數因子已約掉)──
-        if use_topk:
-            numer = (weight.unsqueeze(-1) * feat_sel).sum(1)  # [B,C] = Σ w·c
-        else:
-            numer = weight @ feat                          # [B,C]
-        denom = weight.sum(1, keepdim=True)                # [B,1] = Σ w(≥1)
-        out[start:start + chunk] = numer / denom           # 正規化加權平均
-
-    # [P,C] -> [H,W,C] -> [C,H,W]
-    return out.reshape(h, w, C).permute(2, 0, 1).contiguous()
+    if cfg.tile_size and cfg.tile_size > 0:
+        return _render_tiled(xy, scale, conic, feat, h, w, cfg)
+    return _render_full(xy, conic, feat, h, w, grid, cfg)
 
 
 # 自我驗證：uv run python -m src.image_gs_implementation.render.process

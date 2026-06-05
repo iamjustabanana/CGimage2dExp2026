@@ -22,8 +22,8 @@ import numpy as np
 import torch
 
 from .config import Config, load_config, resolve_device
-from . import input_image, gaussians, render, utils
-# from . import train, compress
+from . import input_image, gaussians, render, train, utils
+# from . import compress
 
 
 def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
@@ -67,15 +67,18 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     results.append(input_image.to_numpy(init_render))
     utils.save_image(init_render, f"{cfg.out_dir}/render_init.png")
 
-    # ---- Step 4~6：待實作（完成後逐段打開）----
-    # Step 6(資訊)：先報壓縮率(用最終 num_gaussians)
+    # ---- Step 4(+5)：訓練 ----
+    # progressive 開啟時 train 內部會呼叫 Step 5 漸進補高斯；train 內部用 Step 3 render。
+    # 注意：純 PyTorch 全量訓練很慢/吃記憶體，高解析請把 config 的 downsample 調大。
+    g = train.process(g, target, grid, cfg)
+
+    # ---- Step 3：最終渲染重建圖 ----
+    with torch.no_grad():
+        pred = render.process(g, h, w, grid, cfg)
+    results.append(input_image.to_numpy(pred))
+    utils.save_image(pred, f"{cfg.out_dir}/render.png")
+
+    # ---- Step 6：壓縮率 + 量化（待實作）----
     # compress.process(g, h * w, cfg)
-    # Step 4(+5)：訓練；progressive 開啟時 train 內部會呼叫 Step 5 漸進補高斯。
-    #            train 內部用 Step 3 的 render.process 渲染。
-    # g = train.process(g, target, grid, cfg)
-    # Step 3：最終渲染重建圖
-    # pred = render.process(g, h, w, grid, cfg)
-    # results.append(input_image.to_numpy(pred))
-    # utils.save_image(pred, f"{cfg.out_dir}/render.png")
 
     return results
