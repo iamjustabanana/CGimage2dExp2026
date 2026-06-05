@@ -33,7 +33,6 @@ class Config:
     inverse_scale: bool = True   # 論文預設：參數存 1/s(inverse scale)，收斂更快更好(Eq.2 footnote)
     # ---- 渲染（Step 3）----
     topk: int = 10               # 每像素只取最近 K 個高斯(論文做法)；0 = 全量(較慢)
-    eps: float = 1e-8
     # ---- 訓練（Step 4）----
     max_steps: int = 5000
     pos_lr: float = 0.3

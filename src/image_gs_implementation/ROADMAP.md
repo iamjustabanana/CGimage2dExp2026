@@ -19,7 +19,7 @@ src/image_gs_implementation/
 ├── gaussians/         # Step 2 ✅ 高斯參數模型 + 初始化
 ├── render/            # Step 3 ✅ 可微分渲染器(全量 + top-K)
 ├── train/             # Step 4 ⬜ 訓練迴圈(+ lr 衰減/早停)
-├── progressive/       # Step 5 ⬜ 誤差引導漸進加高斯
+├── progressive/       # Step 5 ✅ 誤差引導漸進加高斯
 ├── compress/          # Step 6 ⬜ 壓縮率 + 量化
 └── outputs/           # 輸出圖(不進 git)
 ```
@@ -69,6 +69,8 @@ conic    Σ⁻¹
   - 官方對照：`forward` / gsplat `rasterize_gaussians_sum`(含 top-K)
   - 驗證：`uv run python -m src.image_gs_implementation.render.process`(看 `_check_render.png`
     紅圓/綠橫/藍直/黃斜橢圓);handler 多輸出 `render_init.png`(未訓練初始高斯的重建)。
+  - 數值穩定：聚合前每像素「減去最小二次型(=最大權重)」再 exp(類 softmax)，最大權重恆=1、
+    分母≥1。**不可用 `+eps` 當分母保護**：權重會 underflow，eps 反而蓋過真實權重 -> 整片變黑洞。
   - 注意：純 PyTorch 全量 all-pairs + autograd 記憶體吃重，訓練(Step 4)時要靠
     downsample / 控制高斯數;預覽渲染記得包 `torch.no_grad()`。
 
@@ -76,10 +78,12 @@ conic    Σ⁻¹
   - 官方對照：`optimize` / `_get_total_loss` / `_init_optimization` / `_lr_schedule`
   - 驗證：loss 降、PSNR 升、輸出越來越像原圖。
 
-- [ ] **Step 5 — `progressive/`**：`num_to_add` + `process`(誤差引導漸進加高斯)
-  - 起始只放 `initial_ratio`；訓練中分 `add_times` 次在高誤差區補高斯；train 迴圈呼叫。
+- [x] **Step 5 — `progressive/`**：`num_to_add` + `process`(誤差引導漸進加高斯)
+  - 渲染目前圖 → 誤差圖(機率) → multinomial 取樣新位置 → 新高斯顏色=殘差 → 接上舊的回傳。
+  - 起始只放 `initial_ratio`；訓練中分 `add_times` 次在高誤差區補高斯；由 train 迴圈呼叫並重建 optimizer。
   - 官方對照：`_add_gaussians`(及 `optimize` 內呼叫時機)
-  - 驗證：開 progressive vs 關，同樣總數下 PSNR 較高；新高斯落在高誤差區。
+  - 驗證：`uv run python -m src.image_gs_implementation.progressive.process`
+    新高斯處平均誤差 ≈ 全圖 2.3 倍；`_check_progressive.png` 紅點落在高誤差(亮)區。
 
 - [ ] **Step 6 — `compress/`**：`compression_stats` + `ste_quantize`(STE 量化)
   - 官方對照：`_log_compression_rate` / `_quantize` / `utils/quantization_utils.py`

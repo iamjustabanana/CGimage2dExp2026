@@ -71,24 +71,32 @@ def process(gaussians, h: int, w: int, grid, cfg) -> torch.Tensor:
 
     for start in range(0, P, chunk):
         pts = grid[start:start + chunk]                    # x：這批像素座標 [B,2]
-        # ── 算 Gᵢ(x) = exp(-½ (x-μ)ᵀ Σ⁻¹ (x-μ))：論文 Eq.1 ──
+        # ── 算二次型 q = (x-μ)ᵀ Σ⁻¹ (x-μ)，論文 Eq.1 裡 exp 內的部分 ──
         d = pts[:, None, :] - xy[None, :, :]               # [B,N,2] 像素到高斯中心的位移 = (x-μ)
-        # 二次型 (x-μ)ᵀ Σ⁻¹ (x-μ)：tmp = d·conic，再跟 d 逐元素相乘求和
+        # tmp = d·conic，再跟 d 逐元素相乘求和 -> 二次型
         tmp = torch.einsum("bni,nij->bnj", d, conic)       # [B,N,2]
-        quad = (tmp * d).sum(-1)                            # [B,N]
-        G = torch.exp(-0.5 * quad)                         # [B,N] = Gᵢ(x)，論文 Eq.1
+        quad = (tmp * d).sum(-1)                            # [B,N]  q_i = (x-μ)ᵀΣ⁻¹(x-μ)
 
-        # ── 聚合顏色 cr(x) = Σ_{i∈Sₖ} Gᵢ·cᵢ / Σ_{i∈Sₖ} Gᵢ：論文 Eq.5(分子/分母分開算)──
-        if use_topk:                                       # 論文 Eq.5：取 top-K 再正規化
-            vals, idx = G.topk(k, dim=1)                   # [B,K] 每像素最大的 K 個 G 值
-            feat_k = feat[idx]                             # [B,K,C] 對應顏色
-            numer = (vals.unsqueeze(-1) * feat_k).sum(1)   # [B,C] = Σ G·c
-            denom = vals.sum(1, keepdim=True)              # [B,1] = Σ G
-        else:                                              # 全量(Eq.4 + 正規化)
-            numer = G @ feat                               # [B,C]
-            denom = G.sum(1, keepdim=True)                 # [B,1]
+        # ── 選參與聚合的高斯：top-K = 權重最大 = 二次型 q 最小的 K 個 ──
+        if use_topk:                                       # 論文 Eq.5：每像素只留 top-K
+            quad, idx = quad.topk(k, dim=1, largest=False)  # [B,K] 最小的 K 個 q / 索引
+            feat_sel = feat[idx]                           # [B,K,C] 對應顏色 cᵢ
+        else:                                              # 全量(用所有高斯)
+            feat_sel = None
 
-        out[start:start + chunk] = numer / (denom + cfg.eps)  # 正規化加權平均
+        # ── 數值穩定：每像素減去最小 q(=最大權重)再取 exp ──
+        # cr(x)=ΣGᵢcᵢ/ΣGᵢ；把 Gᵢ 同除最大權重 exp(-½q_min) 在分子分母會約掉，數學等價，
+        # 但這樣最大權重恆=1、分母≥1 -> 不會 underflow 變黑、也不用 eps。
+        q_min = quad.min(dim=1, keepdim=True).values       # [B,1] 最近高斯的 q
+        weight = torch.exp(-0.5 * (quad - q_min))          # [B,K或N] 穩定化權重(最大=1)
+
+        # ── 聚合 cr(x) = Σ w·c / Σ w：論文 Eq.5(常數因子已約掉)──
+        if use_topk:
+            numer = (weight.unsqueeze(-1) * feat_sel).sum(1)  # [B,C] = Σ w·c
+        else:
+            numer = weight @ feat                          # [B,C]
+        denom = weight.sum(1, keepdim=True)                # [B,1] = Σ w(≥1)
+        out[start:start + chunk] = numer / denom           # 正規化加權平均
 
     # [P,C] -> [H,W,C] -> [C,H,W]
     return out.reshape(h, w, C).permute(2, 0, 1).contiguous()
