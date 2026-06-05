@@ -39,6 +39,10 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     grad_vis = (grad_prob / grad_prob.max()).reshape(h, w).unsqueeze(0).expand(3, h, w)
     results: list[np.ndarray] = [input_image.to_numpy(target), input_image.to_numpy(grad_vis)]
 
+    # 同時存到 config 指定的 out_dir
+    input_image.save_image(target, f"{cfg.out_dir}/input.png")
+    input_image.save_image(grad_vis, f"{cfg.out_dir}/gradient.png")
+
     # ---- Step 2~5：待實作（完成後逐段打開）----
     # g = gaussians.process(target, grad_prob, grid, cfg, device)
     # compress.process(g, h * w, cfg)

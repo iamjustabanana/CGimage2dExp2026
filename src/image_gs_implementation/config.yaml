@@ -3,7 +3,7 @@
 # 每個欄位標了它在哪個 Step 開始被用到。
 
 # ---- 輸入影像（Step 1）----
-downsample: 4            # 2k 圖縮成 1/4 邊長(~512)，純 PyTorch 才跑得動
+downsample: 1            # 2k 圖縮成 1/4 邊長(~512)，純 PyTorch 才跑得動
 
 # ---- 高斯（Step 2）----
 num_gaussians: 5000
