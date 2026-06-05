@@ -43,7 +43,7 @@ class Gaussians2D(nn.Module):
         # 先建立 4 個參數(暫時值)；真正初值在 init_from_image 填。
         # 用 nn.Parameter 包起來，optimizer 才會去更新它們、autograd 才會追蹤梯度。
         self.xy = nn.Parameter(torch.zeros(num_gaussians, 2, device=device))      # 位置(像素)
-        self.scale = nn.Parameter(torch.ones(num_gaussians, 2, device=device))    # 兩軸尺度(像素)
+        self.scale = nn.Parameter(torch.ones(num_gaussians, 2, device=device))    # 兩軸尺度(inverse_scale 時存 1/s)
         self.rot = nn.Parameter(torch.zeros(num_gaussians, 1, device=device))     # 旋轉角(弧度)
         self.feat = nn.Parameter(torch.zeros(num_gaussians, feat_dim, device=device))  # 顏色
 
@@ -69,7 +69,8 @@ class Gaussians2D(nn.Module):
         self.xy.copy_(grid[selected])                       # [N,2] 取對應像素中心座標
 
         # ---- 尺度 / 旋轉 ----
-        self.scale.fill_(cfg.init_scale)                    # 兩軸都先設成 init_scale(像素)
+        # inverse_scale: 參數存 1/s(論文預設)，所以填 1/init_scale；否則直接填 init_scale。
+        self.scale.fill_(1.0 / cfg.init_scale if cfg.inverse_scale else cfg.init_scale)
         self.rot.zero_()                                    # 初始不旋轉
 
         # ---- 顏色：取原圖「該位置像素」的顏色 ----

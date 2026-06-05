@@ -22,8 +22,8 @@ import numpy as np
 import torch
 
 from .config import Config, load_config, resolve_device
-from . import input_image, gaussians
-# from . import render, train, compress
+from . import input_image, gaussians, render
+# from . import train, compress
 
 
 def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
@@ -60,7 +60,14 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     results.append(input_image.to_numpy(black_pos_vis))
     input_image.save_image(black_pos_vis, f"{cfg.out_dir}/gaussians_black.png")
 
-    # ---- Step 3~6：待實作（完成後逐段打開）----
+    # ---- Step 3：用(尚未訓練的)初始高斯渲染一張，驗證渲染器(也是訓練前 baseline) ----
+    # 預覽渲染不需要梯度，包 no_grad 才不會建龐大計算圖(省記憶體、加速)。
+    with torch.no_grad():
+        init_render = render.process(g, h, w, grid, cfg)
+    results.append(input_image.to_numpy(init_render))
+    input_image.save_image(init_render, f"{cfg.out_dir}/render_init.png")
+
+    # ---- Step 4~6：待實作（完成後逐段打開）----
     # Step 6(資訊)：先報壓縮率(用最終 num_gaussians)
     # compress.process(g, h * w, cfg)
     # Step 4(+5)：訓練；progressive 開啟時 train 內部會呼叫 Step 5 漸進補高斯。

@@ -9,7 +9,8 @@ downsample: 2            # 2k 圖縮成 1/4 邊長(~512)，純 PyTorch 才跑得
 num_gaussians: 5000
 init_mode: gradient      # gradient(梯度引導) | random(對照組)
 init_random_ratio: 0.3   # gradient 模式下仍有這比例隨機散佈(避免平坦區沒高斯)
-init_scale: 5.0          # 初始高斯半徑(像素)
+init_scale: 5.0          # 初始高斯半徑(像素，std)
+inverse_scale: true      # 論文預設：參數存 1/s，收斂更快更好(Eq.2 footnote)
 
 # ---- 渲染（Step 3）----
 topk: 10                 # 每像素只取最近 K 個高斯(論文做法)；0 = 全量(較慢)

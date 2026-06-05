@@ -17,7 +17,7 @@ src/image_gs_implementation/
 ├── handler.py         # pipeline 總指揮：process(np.uint8) -> list[np.uint8]
 ├── input_image/       # Step 1 ✅ 載圖/網格/梯度圖/PSNR/I-O
 ├── gaussians/         # Step 2 ✅ 高斯參數模型 + 初始化
-├── render/            # Step 3 ⬜ 可微分渲染器(全量 + top-K)
+├── render/            # Step 3 ✅ 可微分渲染器(全量 + top-K)
 ├── train/             # Step 4 ⬜ 訓練迴圈(+ lr 衰減/早停)
 ├── progressive/       # Step 5 ⬜ 誤差引導漸進加高斯
 ├── compress/          # Step 6 ⬜ 壓縮率 + 量化
@@ -62,11 +62,15 @@ conic    Σ⁻¹
   - 驗證：`uv run python -m src.image_gs_implementation.gaussians.process`
     看 `outputs/_check_gaussians_gradient.png`，紅點(高斯中心)應集中在邊緣。
 
-- [ ] **Step 3 — `render/`**：`build_conic` + `render`，分兩階段
+- [x] **Step 3 — `render/`**：`build_conic` + `render`(依論文 Eq.1/2/5)
   - 3.1 全量加權平均(像素分塊避免爆顯存)
-  - 3.2 **top-K 正規化**(論文核心)：每像素只取權重最大的 K 個高斯
+  - 3.2 **top-K 正規化**(論文核心)：每像素依 G 值取最大的 K 個高斯
+  - conic 用因式分解解析式 `R·diag(1/s²)·Rᵀ`(不用數值求逆);參數存 inverse scale 1/s
   - 官方對照：`forward` / gsplat `rasterize_gaussians_sum`(含 top-K)
-  - 驗證：固定幾個高斯，渲染出彩色橢圓斑點；topk 開關結果合理。
+  - 驗證：`uv run python -m src.image_gs_implementation.render.process`(看 `_check_render.png`
+    紅圓/綠橫/藍直/黃斜橢圓);handler 多輸出 `render_init.png`(未訓練初始高斯的重建)。
+  - 注意：純 PyTorch 全量 all-pairs + autograd 記憶體吃重，訓練(Step 4)時要靠
+    downsample / 控制高斯數;預覽渲染記得包 `torch.no_grad()`。
 
 - [ ] **Step 4 — `train/`**：`make_optimizer` + `train`(L1[+SSIM]、Adam 分組 lr、lr 衰減/早停)
   - 官方對照：`optimize` / `_get_total_loss` / `_init_optimization` / `_lr_schedule`
