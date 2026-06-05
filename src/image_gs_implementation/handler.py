@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from .input_image.process import process_batch as _process_batch
+from .input_image.process import process_image as _process_image
 
 
-def process_batch(images: list[np.ndarray]) -> list[np.ndarray]:
-    # Future: add logging, validation, preprocessing, post-processing, etc.
-    return _process_batch(images)
+def process(image: np.ndarray) -> list[np.ndarray]:
+    result = _process_image(image)
+
+    # mock result
+    return [result.copy() for _ in range(10)]

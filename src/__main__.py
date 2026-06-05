@@ -14,15 +14,13 @@ def main() -> int:
             print("No valid image paths provided.")
             return 1
 
-        images = [load(p) for p in paths]
-        print(f"Loaded {len(images)} image(s)")
-
-        results = image_gs_implementation.process_batch(images)
-        print(f"Got {len(results)} output image(s)")
-
-        for i, arr in enumerate(results):
-            h, w = arr.shape[:2]
-            print(f"  Output {i + 1}: {w}×{h} {arr.dtype}")
+        for p in paths:
+            arr = load(p)
+            results = image_gs_implementation.process(arr)
+            print(f"{os.path.basename(p)} → {len(results)} output(s)")
+            for i, r in enumerate(results):
+                h, w = r.shape[:2]
+                print(f"  [{i + 1}] {w}×{h} {r.dtype}")
         return 0
     else:
         from streamlit.web import cli

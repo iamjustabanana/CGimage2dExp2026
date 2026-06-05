@@ -14,11 +14,9 @@ import streamlit as st
 from .. import image_gs_implementation
 from .image_loader import load, ALLOWED_EXTENSIONS
 
-st.set_page_config(page_title="Image Batch Processor", layout="wide")
-st.title("Image Batch Processor")
+st.set_page_config(page_title="Image Processor", layout="wide")
+st.title("Image Processor")
 
-if "batch" not in st.session_state:
-    st.session_state.batch = []
 if "results" not in st.session_state:
     st.session_state.results = []
 if "slide_index" not in st.session_state:
@@ -31,23 +29,12 @@ uploaded_files = st.file_uploader(
     key="file_uploader",
 )
 
-col_up, _ = st.columns([1, 5])
-with col_up:
-    if st.button("Upload", disabled=not uploaded_files, width='stretch'):
-        for f in uploaded_files:
-            st.session_state.batch.append(load(f.read()))
-        st.success(f"Loaded {len(uploaded_files)} image(s)")
-        st.rerun()
-
-st.divider()
-st.write(f"**Batch size:** {len(st.session_state.batch)}")
-
-for i, arr in enumerate(st.session_state.batch):
-    st.image(arr, caption=f"Image {i + 1}  ({arr.shape[1]}×{arr.shape[0]})", width=200)
-
-if st.button("Process Batch", disabled=len(st.session_state.batch) == 0):
-    with st.spinner("Processing..."):
-        st.session_state.results = image_gs_implementation.process_batch(st.session_state.batch)
+if st.button("Upload & Process", disabled=not uploaded_files):
+    all_results = []
+    for f in uploaded_files:
+        arr = load(f.read())
+        all_results.extend(image_gs_implementation.process(arr))
+    st.session_state.results = all_results
     st.session_state.slide_index = 0
     st.rerun()
 
@@ -77,8 +64,7 @@ if st.session_state.results:
             slide_index=(st.session_state.slide_index + 1) % total
         ), width='stretch')
 
-    if st.button("Clear & Start Over"):
-        st.session_state.batch = []
+    if st.button("Clear"):
         st.session_state.results = []
         st.session_state.slide_index = 0
         st.rerun()

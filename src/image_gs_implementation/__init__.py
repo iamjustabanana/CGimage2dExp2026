@@ -1,1 +1,1 @@
-from .handler import process_batch
+from .handler import process
