@@ -18,12 +18,14 @@ Step 4: 訓練迴圈  ✅ 已完成
 from __future__ import annotations
 
 import math
+import os
 
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from .. import render
-from .. import progressive
+from . import progressive
 from ..input_image import psnr
 from ..utils import save_image
 
@@ -84,9 +86,19 @@ def train(gaussians, target, grid, cfg):
         need = cfg.add_steps * cfg.add_times + cfg.post_min_steps
         max_steps = max(max_steps, need)
 
-    best_psnr, no_improve, decays = 0.0, 0, 0
+    # 每次訓練建一個乾淨的 steps 子資料夾，舊的先清掉
+    steps_dir = os.path.join(cfg.out_dir, "steps")
+    if os.path.isdir(steps_dir):
+        for f in os.listdir(steps_dir):
+            if f.endswith(".png"):
+                os.remove(os.path.join(steps_dir, f))
+    os.makedirs(steps_dir, exist_ok=True)
 
-    for step in range(1, max_steps + 1):
+    best_psnr, no_improve, decays = 0.0, 0, 0
+    early_stop = False
+
+    pbar = tqdm(range(1, max_steps + 1), desc="Training", unit="step")
+    for step in pbar:
         # --- 渲染 + loss + 反傳 + 更新 ---
         pred = render.process(gaussians, h, w, grid, cfg)        # Step 3
         loss = F.l1_loss(pred, target)                           # L1
@@ -103,13 +115,13 @@ def train(gaussians, target, grid, cfg):
             if add > 0:
                 gaussians = progressive.process(gaussians, target, grid, cfg, device, add)
                 optimizer = make_optimizer(gaussians, cfg)       # 參數換新 -> optimizer 重建
-                print(f"[step {step}] +{add} gaussians -> {gaussians.num_gaussians}")
+                pbar.write(f"[step {step}] +{add} gaussians -> {gaussians.num_gaussians}")
 
         # --- 評估 + lr 衰減/早停 ---
         if step % cfg.eval_steps == 0:
             with torch.no_grad():
                 cur = psnr(pred.clamp(0, 1), target)
-            print(f"[step {step}] loss={loss.item():.4f}  PSNR={cur:.2f} dB  N={gaussians.num_gaussians}")
+            pbar.set_postfix(loss=f"{loss.item():.4f}", psnr=f"{cur:.2f}", N=gaussians.num_gaussians)
             # 只有在高斯加滿後才開始 lr 排程/早停
             if cfg.lr_schedule and gaussians.num_gaussians >= cfg.num_gaussians:
                 if cur > best_psnr + cfg.decay_threshold:
@@ -119,16 +131,21 @@ def train(gaussians, target, grid, cfg):
                     if no_improve >= cfg.check_decay_steps:
                         no_improve, decays = 0, decays + 1
                         if decays > cfg.max_decay_times:
-                            print(f"[step {step}] early stop (no improvement)")
+                            pbar.write(f"[step {step}] early stop (no improvement)")
+                            early_stop = True
                             break
                         for pg in optimizer.param_groups:
                             pg["lr"] /= cfg.decay_ratio
-                        print(f"[step {step}] lr decayed /{cfg.decay_ratio}")
+                        pbar.write(f"[step {step}] lr decayed /{cfg.decay_ratio}")
 
         if cfg.save_image_steps and step % cfg.save_image_steps == 0:
             with torch.no_grad():
                 cur = psnr(pred.clamp(0, 1), target)
-            save_image(pred, f"{cfg.out_dir}/train_step{step:05d}_psnr{cur:.1f}.png")
+            save_image(pred, os.path.join(steps_dir, f"step{step:05d}_psnr{cur:.1f}.png"))
+
+    pbar.close()
+    if not early_stop:
+        pbar.write(f"Training completed: {max_steps} steps")
 
     return gaussians
 

@@ -1,5 +1,5 @@
 """
-Step 5: 誤差引導漸進最佳化 (progressive)  ✅ 已完成
+誤差引導漸進最佳化 (progressive)  ✅ 已完成
 =================================================
 論文核心貢獻之一。訓練時不要一次放滿所有高斯，而是：
   1. 一開始只放 initial_ratio 比例的高斯。
@@ -24,8 +24,8 @@ import math
 
 import torch
 
-from .. import render
-from ..gaussians import Gaussians2D
+from ... import render
+from ...gaussians import Gaussians2D
 
 
 def num_to_add(current: int, cfg) -> int:
@@ -75,16 +75,16 @@ def process(gaussians, target, grid, cfg, device, add_num: int):
     return grown
 
 
-# 自我驗證：uv run python -m src.image_gs_implementation.progressive.process
+# 自我驗證：uv run python -m src.image_gs_implementation.train.progressive.process
 # 先用少量高斯(重建較差)，加一批，檢查新點是否落在高誤差區。
 if __name__ == "__main__":
     import sys
     import numpy as np
     from PIL import Image
-    from ..config import load_config, resolve_device
-    from ..gaussians import Gaussians2D as _G
-    from ..input_image import to_tensor, get_grid, gradient_map
-    from ..utils import save_image
+    from ...config import load_config, resolve_device
+    from ...gaussians import Gaussians2D as _G
+    from ...input_image import to_tensor, get_grid, gradient_map
+    from ...utils import save_image
 
     cfg = load_config()
     device = resolve_device(cfg.device)
@@ -108,7 +108,6 @@ if __name__ == "__main__":
         pred = render.process(g, H, W, grid, cfg).clamp(0, 1)
     err = (target - pred).abs().mean(dim=0)                       # [H,W] 誤差大小
     err_norm = (err / (err.max() + 1e-12)).unsqueeze(0).expand(3, H, W)
-    # 對照用：純重建圖(彩色) 與 純誤差圖(灰)，方便看出底圖是「誤差」不是「render」
     save_image(pred, f"{cfg.out_dir}/_check_progressive_render.png")
     save_image(err_norm, f"{cfg.out_dir}/_check_progressive_error.png")
     vis = err_norm.clone()

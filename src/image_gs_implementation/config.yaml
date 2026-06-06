@@ -3,7 +3,7 @@
 # 每個欄位標了它在哪個 Step 開始被用到。
 
 # ---- 輸入影像（Step 1）----
-downsample: 2            # 2k 圖縮成 1/4 邊長(~512)，純 PyTorch 才跑得動
+downsample: 4            # 2k 圖縮成 1/4 邊長(~512)，純 PyTorch 才跑得動
 
 # ---- 高斯（Step 2）----
 num_gaussians: 5000
@@ -17,7 +17,7 @@ topk: 10                 # 每像素只取最近 K 個高斯(論文做法)；0 =
 tile_size: 64            # >0：tile 渲染(切方塊+剔除遠處高斯，快)；0：全量 all-pairs(慢)。純PyTorch最佳~64
 
 # ---- 訓練（Step 4）----
-max_steps: 5000
+max_steps: 2000
 pos_lr: 0.3             # 注意：像素座標，位置 lr 比官方[0,1]空間大很多
 scale_lr: 2.0e-3
 rot_lr: 2.0e-3
@@ -36,8 +36,8 @@ decay_threshold: 1.0e-3
 progressive: true
 initial_ratio: 0.5     # 一開始只放總數的這個比例
 add_times: 4           # 分幾次把高斯加到 num_gaussians
-add_steps: 500         # 每隔幾步加一次
-post_min_steps: 3000   # 加滿後至少再訓練幾步
+add_steps: 300         # 每隔幾步加一次
+post_min_steps: 800    # 加滿後至少再訓練幾步
 
 # ---- 量化／壓縮（Step 6）----
 quantize: false

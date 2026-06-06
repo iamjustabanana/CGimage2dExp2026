@@ -19,8 +19,8 @@ src/image_gs_implementation/
 ├── gaussians/         # Step 2 ✅ 高斯參數模型 + 初始化
 ├── render/            # Step 3 ✅ 可微分渲染器(全量 + top-K)
 ├── train/             # Step 4 ✅ 訓練迴圈(+ lr 衰減/早停)
-├── progressive/       # Step 5 ✅ 誤差引導漸進加高斯
-├── compress/          # Step 6 ⬜ 壓縮率 + 量化
+│   └── progressive/   # Step 5 ✅ 誤差引導漸進加高斯(train 的內部元件)
+├── compress/          # Step 6 ✅ 壓縮率 + 量化
 └── outputs/           # 輸出圖(不進 git)
 ```
 
@@ -90,9 +90,12 @@ conic    Σ⁻¹
   - 驗證：`uv run python -m src.image_gs_implementation.progressive.process`
     新高斯處平均誤差 ≈ 全圖 2.3 倍；`_check_progressive.png` 紅點落在高誤差(亮)區。
 
-- [ ] **Step 6 — `compress/`**：`compression_stats` + `ste_quantize`(STE 量化)
+- [x] **Step 6 — `compress/`**：`compression_stats` + `ste_quantize`(STE 量化)
+  - 每高斯 bit 數 = 2×pos + 2×scale + rot + C×feat；bpp_compressed = 總 bits / num_pixels。
+  - STE：前向量化到 [0, 2^bits-1] 再還原；反向梯度直通(`x + (dq-x).detach()`)。
   - 官方對照：`_log_compression_rate` / `_quantize` / `utils/quantization_utils.py`
-  - 驗證：報「壓縮 N 倍」；量化後 PSNR 掉一點但更小。
+  - 驗證：`uv run python -m src.image_gs_implementation.compress.process`
+    16bit 量化誤差≈0，8bit≈0.001，4bit≈0.016；16bit 量化後 PSNR 損失 ≈ 0 dB。
 
 每完成一步：填滿該子套件 → 打開 `handler.py` 對應段落 → 來這份打勾。
 

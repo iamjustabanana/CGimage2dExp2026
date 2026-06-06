@@ -22,8 +22,7 @@ import numpy as np
 import torch
 
 from .config import Config, load_config, resolve_device
-from . import input_image, gaussians, render, train, utils
-# from . import compress
+from . import input_image, gaussians, render, train, compress, utils
 
 
 def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
@@ -78,7 +77,7 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     results.append(input_image.to_numpy(pred))
     utils.save_image(pred, f"{cfg.out_dir}/render.png")
 
-    # ---- Step 6：壓縮率 + 量化（待實作）----
-    # compress.process(g, h * w, cfg)
+    # ---- Step 6：壓縮率 + 量化 ----
+    compress.process(g, h * w, cfg)
 
     return results

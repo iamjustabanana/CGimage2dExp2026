@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import os
 import sys
 
@@ -10,8 +11,10 @@ if __name__ == "__main__" and __package__ is None:
         sys.path.insert(0, _root)
 
 import streamlit as st
+from PIL import Image
 
 from .. import image_gs_implementation
+from ..image_gs_implementation.config import load_config
 from .image_loader import load, ALLOWED_EXTENSIONS
 
 st.set_page_config(page_title="Image Processor", layout="wide")
@@ -68,3 +71,27 @@ if st.session_state.results:
         st.session_state.results = []
         st.session_state.slide_index = 0
         st.rerun()
+
+# ── Training Progress ─────────────────────────────────────────────────────────
+_steps_dir = os.path.join(load_config().out_dir, "steps")
+_step_files = sorted(glob.glob(os.path.join(_steps_dir, "step*.png")))
+
+if _step_files:
+    st.divider()
+    st.subheader("Training Progress")
+
+    cols_per_row = 4
+    for row_start in range(0, len(_step_files), cols_per_row):
+        row_files = _step_files[row_start:row_start + cols_per_row]
+        cols = st.columns(cols_per_row)
+        for col, fpath in zip(cols, row_files):
+            fname = os.path.basename(fpath)
+            # 從檔名 step00500_psnr28.5.png 解析 step / PSNR
+            try:
+                step_part, psnr_part = fname.replace(".png", "").split("_psnr")
+                step_num = int(step_part.replace("step", ""))
+                caption = f"Step {step_num}  |  PSNR {psnr_part} dB"
+            except ValueError:
+                caption = fname
+            with col:
+                st.image(Image.open(fpath), caption=caption, use_container_width=True)
