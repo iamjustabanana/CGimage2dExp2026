@@ -1,28 +1,24 @@
 """
 Step 1: 輸入影像處理  ✅ 已完成
 ==============================
-本子套件 = pipeline 的第一站，負責把「外面進來的 numpy 圖」轉成核心要用的東西，
-以及提供 I/O / 評估小工具。後面每一步都會用到。
+本子套件 = pipeline 的第一站，負責把「外面進來的 numpy 圖」轉成核心要用的東西。
 
   to_tensor    : np.uint8 RGB [H,W,C] -> torch tensor [C,H,W] (0~1)，可縮圖
-  to_numpy     : torch [C,H,W] (0~1) -> np.uint8 [H,W,C]（回傳給 Streamlit 用）
   get_grid     : 每個像素中心的 (x,y) 座標 [H*W, 2]，單位 pixel
   gradient_map : Sobel 邊緣強度 -> 機率分布 [H*W]（Step 2 取樣初始位置用）
   psnr         : 重建品質(dB)
-  save_image   : 存檔(自動建資料夾)
 
 座標慣例（整個專案統一）：像素座標，x=欄(寬)、y=列(高)，像素(i,j)中心=(x=j+0.5, y=i+0.5)。
 對應官方：image-gs/utils/image_utils.py 的 get_grid / compute_image_gradients / get_psnr
+
+to_numpy / save_image 屬於通用 I/O，放在 utils/。
 """
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image
 
 
 def process(image: np.ndarray, cfg, device: str = "cpu"):
@@ -51,12 +47,6 @@ def to_tensor(image: np.ndarray, downsample: int = 1, device: str = "cpu") -> to
         t = F.interpolate(t.unsqueeze(0), scale_factor=1.0 / downsample,
                           mode="area").squeeze(0)
     return t.to(device)
-
-
-def to_numpy(tensor: torch.Tensor) -> np.ndarray:
-    """torch [C,H,W] (0~1) -> np.uint8 [H,W,C]（邊界轉換，給 Streamlit 輪播）。"""
-    arr = tensor.detach().clamp(0, 1).cpu().permute(1, 2, 0).numpy()
-    return (arr * 255).round().astype(np.uint8)
 
 
 def get_grid(h: int, w: int, device: str = "cpu") -> torch.Tensor:
@@ -94,19 +84,12 @@ def psnr(pred: torch.Tensor, target: torch.Tensor) -> float:
     return (-10.0 * torch.log10(mse + 1e-12)).item()
 
 
-def save_image(tensor: torch.Tensor, path: str) -> None:
-    """torch [C,H,W] (0~1) -> 存檔(自動 clamp、自動建資料夾)。"""
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    arr = to_numpy(tensor)
-    if arr.shape[2] == 1:
-        arr = arr[:, :, 0]
-    Image.fromarray(arr).save(path)
-
-
 # 自我驗證：uv run python -m src.image_gs_implementation.input_image.process [圖片路徑]
 if __name__ == "__main__":
     import sys
+    from PIL import Image
     from ..config import load_config
+    from ..utils import save_image
 
     cfg = load_config()
     path = sys.argv[1] if len(sys.argv) > 1 else "media/images/anime-1_2k.png"

@@ -118,7 +118,8 @@ if __name__ == "__main__":
     import numpy as np
     from PIL import Image
     from ..config import load_config
-    from ..input_image import to_tensor, get_grid, gradient_map, save_image
+    from ..input_image import to_tensor, get_grid, gradient_map
+    from ..utils import save_image
 
     cfg = load_config()
     path = sys.argv[1] if len(sys.argv) > 1 else "media/images/anime-1_2k.png"

@@ -148,7 +148,8 @@ if __name__ == "__main__":
     import torch as _t
     from ..config import load_config
     from ..gaussians import Gaussians2D
-    from ..input_image import get_grid, save_image
+    from ..input_image import get_grid
+    from ..utils import save_image
 
     cfg = load_config()
     H = W = 256

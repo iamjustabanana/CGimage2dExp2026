@@ -37,7 +37,7 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
 
     # 邊界轉 numpy：原圖 + 梯度圖(拉成 3 通道方便顯示)
     grad_vis = (grad_prob / grad_prob.max()).reshape(h, w).unsqueeze(0).expand(3, h, w)
-    results: list[np.ndarray] = [input_image.to_numpy(target), input_image.to_numpy(grad_vis)]
+    results: list[np.ndarray] = [utils.to_numpy(target), utils.to_numpy(grad_vis)]
 
     # 同時存到 config 指定的 out_dir
     utils.save_image(target, f"{cfg.out_dir}/input.png")
@@ -47,23 +47,23 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     g = gaussians.process(target, grad_prob, grid, cfg, device)
     # 紅點疊在原圖上
     pos_vis = gaussians.visualize_positions(g, target)
-    results.append(input_image.to_numpy(pos_vis))
+    results.append(utils.to_numpy(pos_vis))
     utils.save_image(pos_vis, f"{cfg.out_dir}/gaussians_init.png")
     # 紅點疊在梯度圖上(不壓暗，方便檢查點是否落在亮邊)
     grad_pos_vis = gaussians.visualize_positions(g, grad_vis, dim=1.0)
-    results.append(input_image.to_numpy(grad_pos_vis))
+    results.append(utils.to_numpy(grad_pos_vis))
     utils.save_image(grad_pos_vis, f"{cfg.out_dir}/gaussians_on_gradient.png")
     # 紅點疊在全黑背景上
     black = torch.zeros_like(target)
     black_pos_vis = gaussians.visualize_positions(g, black, dim=1.0)
-    results.append(input_image.to_numpy(black_pos_vis))
+    results.append(utils.to_numpy(black_pos_vis))
     utils.save_image(black_pos_vis, f"{cfg.out_dir}/gaussians_black.png")
 
     # ---- Step 3：用(尚未訓練的)初始高斯渲染一張，驗證渲染器(也是訓練前 baseline) ----
     # 預覽渲染不需要梯度，包 no_grad 才不會建龐大計算圖(省記憶體、加速)。
     with torch.no_grad():
         init_render = render.process(g, h, w, grid, cfg)
-    results.append(input_image.to_numpy(init_render))
+    results.append(utils.to_numpy(init_render))
     utils.save_image(init_render, f"{cfg.out_dir}/render_init.png")
 
     # ---- Step 4(+5)：訓練 ----
@@ -74,7 +74,7 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     # ---- Step 3：最終渲染重建圖 ----
     with torch.no_grad():
         pred = render.process(g, h, w, grid, cfg)
-    results.append(input_image.to_numpy(pred))
+    results.append(utils.to_numpy(pred))
     utils.save_image(pred, f"{cfg.out_dir}/render.png")
 
     # ---- Step 6：壓縮率 + 量化 ----
