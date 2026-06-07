@@ -18,6 +18,10 @@ handler 本身很薄 —— 只負責「依序呼叫每個 step 的 process()」
 
 from __future__ import annotations
 
+import json
+import os
+import time
+
 import numpy as np
 import torch
 
@@ -65,6 +69,28 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
         init_render = render.process(g, h, w, grid, cfg)
     results.append(utils.to_numpy(init_render))
     utils.save_image(init_render, f"{cfg.out_dir}/render_init.png")
+
+    # ---- Step 0：清 steps/ 並存初始快照（訓練前的基準線）----
+    steps_dir = os.path.join(cfg.out_dir, "steps")
+    if os.path.isdir(steps_dir):
+        for _f in os.listdir(steps_dir):
+            if _f.endswith(".png") or _f.endswith(".json"):
+                os.remove(os.path.join(steps_dir, _f))
+    os.makedirs(steps_dir, exist_ok=True)
+
+    init_psnr = input_image.psnr(init_render.clamp(0, 1), target)
+    for _view, _img in [("rendered", init_render), ("gaussians", pos_vis),
+                        ("gradient", grad_vis), ("error", utils.error_map(init_render, target))]:
+        _stem = f"step00000_init_{_view}"
+        utils.save_image(_img, os.path.join(steps_dir, _stem + ".png"))
+        with open(os.path.join(steps_dir, _stem + ".json"), "w") as _fp:
+            json.dump({"step": 0, "event": "init", "view": _view,
+                       "psnr": round(float(init_psnr), 2), "loss": 0.0,
+                       "num_gaussians": g.num_gaussians, "timestamp": time.time()}, _fp)
+    with open(os.path.join(steps_dir, "progress.json"), "w") as _fp:
+        json.dump({"step": 0, "total_steps": cfg.max_steps, "status": "training",
+                   "psnr": round(float(init_psnr), 2), "loss": 0.0,
+                   "num_gaussians": g.num_gaussians, "timestamp": time.time()}, _fp)
 
     # ---- Step 4(+5)：訓練 ----
     # progressive 開啟時 train 內部會呼叫 Step 5 漸進補高斯；train 內部用 Step 3 render。

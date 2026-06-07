@@ -43,6 +43,7 @@ class Config:
     ssim_loss_ratio: float = 0.1
     eval_steps: int = 100
     save_image_steps: int = 500
+    save_on_add: bool = True       # 每次 progressive 補高斯後也存一張
     # lr 衰減 / 早停（Step 4）
     lr_schedule: bool = True
     decay_ratio: float = 10.0

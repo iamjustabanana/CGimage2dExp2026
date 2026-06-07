@@ -24,7 +24,8 @@ rot_lr: 2.0e-3
 feat_lr: 5.0e-3
 ssim_loss_ratio: 0.1   # 總 loss = L1 + ratio*(1-SSIM)；0 則只用 L1
 eval_steps: 100        # 每幾步印一次 PSNR
-save_image_steps: 500  # 每幾步存一張重建圖
+save_image_steps: 50  # 每幾步存一張重建圖；0 = 不定期存
+save_on_add: true      # 每次 progressive 補高斯後也存一張
 # lr 衰減 / 早停
 lr_schedule: true
 decay_ratio: 10.0      # 沒進步時 lr 除以這個數

@@ -90,10 +90,12 @@ class Gaussians2D(nn.Module):
 
 @torch.no_grad()
 def visualize_positions(gaussians: "Gaussians2D", target: torch.Tensor,
-                        dim: float = 0.3, radius: int | None = None) -> torch.Tensor:
+                        dim: float = 0.3, radius: int | None = None,
+                        highlight: torch.Tensor | None = None) -> torch.Tensor:
     """把高斯中心畫成紅點疊在(壓暗的)原圖上，回傳 [C,H,W]，用來肉眼檢查分佈。
 
     radius: 每個點畫成 (2r+1)² 的小方塊；不給就依解析度自動縮放(高解析才看得到點)。
+    highlight: 要用藍色畫的高斯索引 tensor（通常是剛新增的那批）。
     """
     C, H, W = target.shape
     if radius is None:
@@ -109,6 +111,18 @@ def visualize_positions(gaussians: "Gaussians2D", target: torch.Tensor,
             if C >= 3:
                 viz[1, ys, xs] = 0.0
                 viz[2, ys, xs] = 0.0
+    # 新增的點用藍色蓋過去
+    if highlight is not None and highlight.numel() > 0:
+        xh = gaussians.xy[highlight, 0].round().long()
+        yh = gaussians.xy[highlight, 1].round().long()
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                xhs = (xh + dx).clamp(0, W - 1)
+                yhs = (yh + dy).clamp(0, H - 1)
+                viz[0, yhs, xhs] = 0.4                     # 淺藍 (R=0.4, G=0.8, B=1.0)
+                if C >= 3:
+                    viz[1, yhs, xhs] = 0.8
+                    viz[2, yhs, xhs] = 1.0
     return viz
 
 

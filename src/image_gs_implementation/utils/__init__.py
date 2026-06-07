@@ -1,6 +1,7 @@
-from .process import save_image, to_numpy
+from .process import error_map, save_image, to_numpy
 
 __all__ = [
+    "error_map",
     "save_image",
     "to_numpy",
 ]

@@ -17,8 +17,10 @@ Step 4: 訓練迴圈  ✅ 已完成
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import time
 
 import torch
 import torch.nn.functional as F
@@ -26,8 +28,45 @@ from tqdm import tqdm
 
 from .. import render
 from . import progressive
+from ..gaussians import visualize_positions
 from ..input_image import psnr
-from ..utils import save_image
+from ..utils import error_map, save_image
+
+
+def _save_checkpoint(steps_dir, step, event, pred, gaussians, target, loss_val, psnr_val, n_before=None):
+    """存 rendered + Gaussian 位置圖，各附一個 JSON sidecar。
+
+    n_before: add 事件時傳入補高斯前的數量，新增的點會以藍色標示。
+    """
+    highlight = None
+    if n_before is not None and n_before < gaussians.num_gaussians:
+        highlight = torch.arange(n_before, gaussians.num_gaussians, device=gaussians.xy.device)
+    views = {
+        "rendered": pred,
+        "gaussians": visualize_positions(gaussians, target, highlight=highlight),
+        "error": error_map(pred, target),
+    }
+    for view_name, img in views.items():
+        stem = f"step{step:05d}_{event}_{view_name}"
+        save_image(img, os.path.join(steps_dir, stem + ".png"))
+        meta = {
+            "step": step, "event": event, "view": view_name,
+            "psnr": round(float(psnr_val), 2), "loss": round(float(loss_val), 4),
+            "num_gaussians": gaussians.num_gaussians, "timestamp": time.time(),
+        }
+        with open(os.path.join(steps_dir, stem + ".json"), "w") as f:
+            json.dump(meta, f)
+
+
+def _update_progress(steps_dir, step, total_steps, loss_val, psnr_val, num_gaussians, status="training"):
+    """每次 eval 更新 progress.json，供 Streamlit 即時讀取。"""
+    data = {
+        "step": step, "total_steps": total_steps, "status": status,
+        "psnr": round(float(psnr_val), 2), "loss": round(float(loss_val), 4),
+        "num_gaussians": num_gaussians, "timestamp": time.time(),
+    }
+    with open(os.path.join(steps_dir, "progress.json"), "w") as f:
+        json.dump(data, f)
 
 
 def make_optimizer(gaussians, cfg):
@@ -86,19 +125,17 @@ def train(gaussians, target, grid, cfg):
         need = cfg.add_steps * cfg.add_times + cfg.post_min_steps
         max_steps = max(max_steps, need)
 
-    # 每次訓練建一個乾淨的 steps 子資料夾，舊的先清掉
     steps_dir = os.path.join(cfg.out_dir, "steps")
-    if os.path.isdir(steps_dir):
-        for f in os.listdir(steps_dir):
-            if f.endswith(".png"):
-                os.remove(os.path.join(steps_dir, f))
-    os.makedirs(steps_dir, exist_ok=True)
+    os.makedirs(steps_dir, exist_ok=True)   # handler 已建好並存了 step 0；這裡只保險
 
     best_psnr, no_improve, decays = 0.0, 0, 0
+    cur = 0.0  # 訓練結束後 _update_progress 用
     early_stop = False
 
     pbar = tqdm(range(1, max_steps + 1), desc="Training", unit="step")
     for step in pbar:
+        saved_this_step = False
+
         # --- 渲染 + loss + 反傳 + 更新 ---
         pred = render.process(gaussians, h, w, grid, cfg)        # Step 3
         loss = F.l1_loss(pred, target)                           # L1
@@ -113,15 +150,23 @@ def train(gaussians, target, grid, cfg):
         if cfg.progressive and step % cfg.add_steps == 0 and gaussians.num_gaussians < cfg.num_gaussians:
             add = progressive.num_to_add(gaussians.num_gaussians, cfg)
             if add > 0:
+                n_before = gaussians.num_gaussians
                 gaussians = progressive.process(gaussians, target, grid, cfg, device, add)
                 optimizer = make_optimizer(gaussians, cfg)       # 參數換新 -> optimizer 重建
                 pbar.write(f"[step {step}] +{add} gaussians -> {gaussians.num_gaussians}")
+                if cfg.save_on_add:
+                    with torch.no_grad():
+                        snap = render.process(gaussians, h, w, grid, cfg)
+                        cur_add = psnr(snap.clamp(0, 1), target)
+                    _save_checkpoint(steps_dir, step, "add", snap, gaussians, target, loss.item(), cur_add, n_before=n_before)
+                    saved_this_step = True
 
         # --- 評估 + lr 衰減/早停 ---
         if step % cfg.eval_steps == 0:
             with torch.no_grad():
                 cur = psnr(pred.clamp(0, 1), target)
             pbar.set_postfix(loss=f"{loss.item():.4f}", psnr=f"{cur:.2f}", N=gaussians.num_gaussians)
+            _update_progress(steps_dir, step, max_steps, loss.item(), cur, gaussians.num_gaussians)
             # 只有在高斯加滿後才開始 lr 排程/早停
             if cfg.lr_schedule and gaussians.num_gaussians >= cfg.num_gaussians:
                 if cur > best_psnr + cfg.decay_threshold:
@@ -138,12 +183,14 @@ def train(gaussians, target, grid, cfg):
                             pg["lr"] /= cfg.decay_ratio
                         pbar.write(f"[step {step}] lr decayed /{cfg.decay_ratio}")
 
-        if cfg.save_image_steps and step % cfg.save_image_steps == 0:
+        # 同一 step 已因 add 存過就跳過，避免重複出現在 Streamlit
+        if cfg.save_image_steps and step % cfg.save_image_steps == 0 and not saved_this_step:
             with torch.no_grad():
-                cur = psnr(pred.clamp(0, 1), target)
-            save_image(pred, os.path.join(steps_dir, f"step{step:05d}_psnr{cur:.1f}.png"))
+                cur_p = psnr(pred.clamp(0, 1), target)
+            _save_checkpoint(steps_dir, step, "periodic", pred, gaussians, target, loss.item(), cur_p)
 
     pbar.close()
+    _update_progress(steps_dir, step, max_steps, loss.item(), cur, gaussians.num_gaussians, status="done")
     if not early_stop:
         pbar.write(f"Training completed: {max_steps} steps")
 

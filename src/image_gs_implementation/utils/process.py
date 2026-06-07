@@ -13,6 +13,17 @@ def to_numpy(tensor: torch.Tensor) -> np.ndarray:
     return (arr * 255).round().astype(np.uint8)
 
 
+def error_map(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Per-pixel L1 誤差套 Magma colormap（對齊 image-gs applyMagma=True 風格）。
+
+    深紫 = 誤差小；亮黃 = 誤差大。回傳 [3,H,W] float32 in [0,1]。
+    """
+    import matplotlib.cm as cm                                       # streamlit 已拉進 venv
+    err = (pred - target).abs().mean(dim=0).detach().cpu().numpy()  # [H,W] in [0,1]
+    colored = cm.magma(err)[:, :, :3].astype("float32")             # [H,W,3] RGB
+    return torch.from_numpy(colored).permute(2, 0, 1)               # [3,H,W]
+
+
 def save_image(tensor: torch.Tensor, path: str) -> None:
     """torch [C,H,W] (0~1) -> 存檔(自動 clamp、自動建資料夾)。"""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
