@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 
 import torch
+from torchvision.transforms.functional import gaussian_blur
 
 from ... import render
 from ...gaussians import Gaussians2D
@@ -51,7 +52,16 @@ def process(gaussians, target, grid, cfg, device, add_num: int):
 
     # 1. 目前重建(no_grad 由 decorator 提供) -> 殘差 -> 誤差圖
     pred = render.process(gaussians, H, W, grid, cfg).clamp(0, 1)   # [C,H,W]
-    diff = target - pred                                           # [C,H,W] 殘差(含正負號)
+    # 計算殘差前先對 GT 做 Gaussian blur，平滑極端殘差值以減少黑塊
+    k = round((H * W) ** 0.5 // 400)
+    if k >= 1:
+        k = max(3, k)
+        if k % 2 == 0:
+            k += 1
+        blurred_target = gaussian_blur(target, kernel_size=k)
+    else:
+        blurred_target = target
+    diff = blurred_target - pred                                   # [C,H,W] 殘差(含正負號)
     error = (diff.abs().mean(dim=0).reshape(-1)) ** 2              # [H*W] 誤差大小(平方放大)
     prob = error / (error.sum() + 1e-12)                          # 正規化成機率分布
 
