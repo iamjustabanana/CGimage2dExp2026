@@ -187,7 +187,7 @@ def _show_progress():
         with col:
             st.image(Image.open(item["img_path"]),
                      caption=item["view"],
-                     use_container_width=True)
+                     width='stretch')
 
 
 _show_live_metrics()
