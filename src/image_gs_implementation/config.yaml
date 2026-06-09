@@ -47,6 +47,9 @@ scale_bits: 16
 rot_bits: 16
 feat_bits: 16
 
+# ---- 影像空間 ----
+gamma: 2.2             # gamma 校正；殘差在 gamma 空間計算可減少新增高斯的黑塊
+
 # ---- 裝置／輸出 ----
 device: auto           # auto -> 依序 cuda > mps > cpu；也可寫死 "cuda"/"cpu"
 out_dir: src/image_gs_implementation/outputs

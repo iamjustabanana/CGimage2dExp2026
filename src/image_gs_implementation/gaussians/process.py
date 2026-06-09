@@ -63,11 +63,13 @@ class Gaussians2D(nn.Module):
 
         # ---- 位置：選 N 個像素當高斯中心 ----
         if cfg.init_mode == "gradient":
-            # 一部分隨機散佈(避免平坦區完全沒高斯)，其餘照梯度機率取樣(細節處密)
-            num_random = round(cfg.init_random_ratio * N)
-            idx_random = torch.randint(num_pixels, (num_random,), device=device)
-            idx_grad = torch.multinomial(grad_prob, N - num_random, replacement=False)
-            selected = torch.cat([idx_random, idx_grad])
+            # Eq.6: P_init(x) = (1−λ_init)·‖∇I(x)‖₂/Σ‖∇I‖₂  +  λ_init/(H·W)
+            # 直接算完整混合機率再一次 multinomial，與論文完全對齊
+            # (grad_prob 已正規化；uniform = 1/HW；init_random_ratio = λ_init)
+            lam = cfg.init_random_ratio                                      # λ_init
+            uniform = torch.full((num_pixels,), 1.0 / num_pixels, device=device)  # λ_init/(H·W) 那項的分布
+            prob = (1.0 - lam) * grad_prob + lam * uniform                  # Eq.6 完整機率
+            selected = torch.multinomial(prob, N, replacement=False)
         else:  # "random"：全部均勻隨機(對照組)
             selected = torch.randint(num_pixels, (N,), device=device)
 

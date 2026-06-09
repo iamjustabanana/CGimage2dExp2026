@@ -73,9 +73,9 @@ def gradient_map(image: torch.Tensor) -> torch.Tensor:
     gray = F.pad(gray, (1, 1, 1, 1), mode="reflect")
     gx = F.conv2d(gray, kx)                                    # padding=0(已手動 pad)
     gy = F.conv2d(gray, ky)
-    grad = torch.sqrt(gx**2 + gy**2).reshape(-1)              # [H*W]
-    grad = grad**2                                             # 平方放大強邊緣(論文做法)
-    return grad / (grad.sum() + 1e-12)                        # 正規化成機率
+    grad = torch.sqrt(gx**2 + gy**2).reshape(-1)              # ‖∇I(x)‖₂  Sobel 梯度大小 [H*W]
+    grad = grad**2
+    return grad / (grad.sum() + 1e-12)                        # ‖∇I(x)‖₂ / Σ_x ‖∇I(x)‖₂
 
 
 def psnr(pred: torch.Tensor, target: torch.Tensor) -> float:

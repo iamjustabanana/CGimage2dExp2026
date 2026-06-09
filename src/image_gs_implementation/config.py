@@ -62,6 +62,8 @@ class Config:
     scale_bits: int = 16
     rot_bits: int = 16
     feat_bits: int = 16
+    # ---- 影像空間 ----
+    gamma: float = 2.2             # gamma 校正；殘差在 gamma 空間計算可減少新增高斯的黑塊
     # ---- 裝置／輸出 ----
     device: str = "auto"
     out_dir: str = "src/image_gs_implementation/outputs"
