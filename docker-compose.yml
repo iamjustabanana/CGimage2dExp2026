@@ -1,0 +1,19 @@
+services:
+  cgimagegs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NONROOT_USERNAME=ubuntu
+        - PROJECT_PATH=/project/cgimagegs
+        - WHISPER_MODEL=${WHISPER_MODEL}
+    restart: on-failure
+    ports:
+      - "8501:8501"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
