@@ -157,8 +157,10 @@ def train(gaussians, target, grid, cfg):
                 if cfg.save_on_add:
                     with torch.no_grad():
                         snap = render.process(gaussians, h, w, grid, cfg)
-                        cur_add = psnr(snap.clamp(0, 1), target)
-                    _save_checkpoint(steps_dir, step, "add", snap, gaussians, target, loss.item(), cur_add, n_before=n_before)
+                        snap_clamped = snap.clamp(0, 1)
+                        cur_add = psnr(snap_clamped, target)
+                        snap_loss = F.l1_loss(snap_clamped, target).item()
+                    _save_checkpoint(steps_dir, step, "add", snap, gaussians, target, snap_loss, cur_add, n_before=n_before)
                     saved_this_step = True
 
         # --- 評估 + lr 衰減/早停 ---
