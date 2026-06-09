@@ -99,13 +99,12 @@ ARG NONROOT_USERNAME
 
 WORKDIR ${PROJECT_PATH}
 
-COPY --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} --from=prod-prepare /home/${NONROOT_USERNAME}/.local/share/uv/python /home/${NONROOT_USERNAME}/.local/share/uv/python`
+COPY --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} --from=prod-prepare /home/${NONROOT_USERNAME}/.local/share/uv/python /home/${NONROOT_USERNAME}/.local/share/uv/python
 COPY --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} --from=prod-prepare ${VENV_PATH} ${VENV_PATH}
 
 USER ${NONROOT_USERNAME}
 
 COPY --exclude=.devcontainer/ --chown=${NONROOT_USERNAME}:${NONROOT_USERNAME} . .
-
 
 # RUN useradd -ms /bin/bash ${NONROOT_USERNAME} --user-group
 USER ${NONROOT_USERNAME}
