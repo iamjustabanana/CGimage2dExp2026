@@ -79,7 +79,7 @@ def process(image: np.ndarray, cfg: Config | None = None) -> list[np.ndarray]:
     os.makedirs(steps_dir, exist_ok=True)
 
     init_psnr = input_image.psnr(init_render.clamp(0, 1), target)
-    for _view, _img in [("rendered", init_render), ("gaussians", pos_vis),
+    for _view, _img in [("target", target), ("rendered", init_render), ("gaussians", pos_vis),
                         ("gradient", grad_vis), ("error", utils.error_map(init_render, target))]:
         _stem = f"step00000_init_{_view}"
         utils.save_image(_img, os.path.join(steps_dir, _stem + ".png"))
